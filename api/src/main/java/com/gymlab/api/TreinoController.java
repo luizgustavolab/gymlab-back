@@ -1,7 +1,8 @@
 package com.gymlab.api;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -12,9 +13,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
@@ -23,29 +24,29 @@ public class TreinoController {
 
     private final ExercicioRepository exercicioRepository;
     private final TreinoUsuarioRepository treinoUsuarioRepository;
+    private final AiService aiService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public TreinoController(ExercicioRepository exercicioRepository, TreinoUsuarioRepository treinoUsuarioRepository) {
+    public TreinoController(ExercicioRepository exercicioRepository, 
+                            TreinoUsuarioRepository treinoUsuarioRepository,
+                            AiService aiService) {
         this.exercicioRepository = exercicioRepository;
         this.treinoUsuarioRepository = treinoUsuarioRepository;
+        this.aiService = aiService;
     }
 
-    // 1. Listagem pública do catálogo de exercícios
     @GetMapping("/exercicios")
     public List<Exercicio> listarExercicios() {
         return exercicioRepository.findAll();
     }
 
-    // 2. Endpoint autenticado para salvar um treino específico
     @PostMapping("/treinos")
     @ResponseStatus(HttpStatus.CREATED)
-    public TreinoUsuario criarTreino(
-            @Valid @RequestBody TreinoRequest request,
-            @AuthenticationPrincipal Jwt jwt
-    ) {
+    public TreinoUsuario criarTreino(@Valid @RequestBody TreinoRequest request, @AuthenticationPrincipal Jwt jwt) {
         String supabaseUserId = jwt.getSubject();
         
         Exercicio exercicio = exercicioRepository.findById(request.exercicioId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Exercício não encontrado no catálogo"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Exercício não encontrado"));
 
         TreinoUsuario treino = new TreinoUsuario();
         treino.setId(UUID.randomUUID());
@@ -61,52 +62,55 @@ public class TreinoController {
         return treinoUsuarioRepository.save(treino);
     }
 
-    // 3. Nova rota para o Angular disparar o fluxo de Geração via IA
     @PostMapping("/treinos/gerar")
     @ResponseStatus(HttpStatus.CREATED)
-    public List<TreinoUsuario> gerarFichaInteligente(
-            @Valid @RequestBody GeraTreinoRequest request,
-            @AuthenticationPrincipal Jwt jwt
-    ) {
-        // O ID do usuário vem direto do JWT do Supabase, garantindo segurança
+    public List<TreinoUsuario> gerarFichaInteligente(@Valid @RequestBody GeraTreinoRequest request, @AuthenticationPrincipal Jwt jwt) {
         String supabaseUserId = jwt.getSubject();
-        
-        // TODO: Aqui entra a integração com a IA (OpenAI/Anthropic)
-        // 1. Calcular IMC (request.peso / (request.altura * request.altura))
-        // 2. Filtrar exercícios do catálogo baseada no request.objetivo()
-        // 3. Orquestrar a montagem e persistir no treinoUsuarioRepository
-        
-        return Collections.emptyList(); 
+
+        String prompt = String.format(
+            "Crie um treino de %d dias para objetivo %s. " +
+            "Responda EXATAMENTE em formato JSON (lista de objetos): " +
+            "[{\"exercicioNome\": \"Nome\", \"grupoMuscular\": \"Nome\", \"series\": 3, \"repeticoes\": 10, \"intervalo\": \"60s\", \"diaSemana\": \"Segunda\"}]. " +
+            "Use nomes de exercícios do catálogo: Supino Reto com Barra, Puxada Alta na Polia, Agachamento Livre, Rosca Direta na Polia, Tríceps Corda. " +
+            "Não adicione textos explicativos, retorne apenas o JSON puro.",
+            request.diasPorSemana(), request.objetivo()
+        );
+
+        try {
+            String jsonDaIa = aiService.gerarFicha(prompt);
+            List<FichaTreinoIaDto> listaIa = objectMapper.readValue(jsonDaIa, new TypeReference<List<FichaTreinoIaDto>>(){});
+
+            List<TreinoUsuario> novosTreinos = listaIa.stream().map(dto -> {
+                Exercicio ex = exercicioRepository.findAll().stream()
+                    .filter(e -> e.getNome().equalsIgnoreCase(dto.exercicioNome()))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Exercício não encontrado no catálogo: " + dto.exercicioNome()));
+
+                TreinoUsuario t = new TreinoUsuario();
+                t.setId(UUID.randomUUID());
+                t.setUserId(UUID.fromString(supabaseUserId));
+                t.setExercicio(ex);
+                t.setGrupoMuscular(dto.grupoMuscular());
+                t.setDiaSemana(dto.diaSemana());
+                t.setSeries(dto.series());
+                t.setRepeticoes(dto.repeticoes());
+                t.setIntervalo(dto.intervalo());
+                t.setCriadoEm(LocalDate.now());
+                return t;
+            }).collect(Collectors.toList());
+
+            return treinoUsuarioRepository.saveAll(novosTreinos);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Erro na geração: " + e.getMessage());
+        }
     }
 }
 
-// DTO para criação de um exercício individual na ficha
 record TreinoRequest(
-    @NotNull(message = "O ID do exercício é obrigatório")
-    UUID exercicioId,
-    @NotBlank(message = "O dia da semana deve ser informado")
-    String diaSemana,
-    @NotBlank(message = "O grupo muscular é obrigatório")
-    String grupoMuscular,
-    @Min(value = 1, message = "O treino deve ter pelo menos 1 série")
-    int series,
-    @Min(value = 1, message = "As repetições devem ser maiores que zero")
-    int repeticoes,
+    @NotNull(message = "O ID do exercício é obrigatório") UUID exercicioId,
+    @NotBlank(message = "O dia da semana deve ser informado") String diaSemana,
+    @NotBlank(message = "O grupo muscular é obrigatório") String grupoMuscular,
+    @Min(value = 1, message = "Séries > 0") int series,
+    @Min(value = 1, message = "Repetições > 0") int repeticoes,
     String intervalo
-) {}
-
-// DTO para o formulário de perfil/cadastro que disparará a IA
-record GeraTreinoRequest(
-    @NotBlank(message = "O gênero deve ser informado")
-    String genero,
-    @Min(value = 30, message = "Peso deve ser maior que 30kg")
-    double peso,
-    @Min(value = 1, message = "Altura deve ser maior que 1 metro")
-    double altura,
-    @NotBlank(message = "O objetivo do treino é obrigatório")
-    String objetivo,
-    @Min(value = 1, message = "Mínimo de 1 dia")
-    @Max(value = 7, message = "Máximo de 7 dias")
-    int diasPorSemana,
-    String feedbackAjuste
 ) {}
