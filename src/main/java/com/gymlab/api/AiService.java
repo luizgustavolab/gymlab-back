@@ -1,27 +1,117 @@
 package com.gymlab.api;
 
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.http.ResponseEntity;
-import java.util.Map;
 
 @Service
 public class AiService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final String OLLAMA_URL = "http://localhost:11434/api/generate";
+    private final RestTemplate restTemplate;
 
-    public String gerarFicha(String prompt) {
-        // Estrutura esperada pelo Ollama
-        Map<String, Object> request = Map.of(
-            "model", "llama3",
-            "prompt", prompt,
-            "stream", false
-        );
+    @Value("${ollama.url}")
+    private String ollamaUrl;
 
-        ResponseEntity<Map> response = restTemplate.postForEntity(OLLAMA_URL, request, Map.class);
-        
-        // Retorna o texto gerado pela IA
-        return (String) response.getBody().get("response");
+    @Value("${ollama.model}")
+    private String ollamaModel;
+
+    public AiService() {
+
+        SimpleClientHttpRequestFactory factory =
+            new SimpleClientHttpRequestFactory();
+
+        factory.setConnectTimeout(5000);
+
+        factory.setReadTimeout(120000);
+
+        this.restTemplate =
+            new RestTemplate(factory);
+    }
+
+    public String gerarFicha(
+        String objetivo,
+        Integer diasPorSemana,
+        List<Exercicio> exercicios
+    ) {
+
+        StringBuilder listaExercicios =
+            new StringBuilder();
+
+        for (Exercicio exercicio : exercicios) {
+
+            listaExercicios
+                .append("- ")
+                .append(exercicio.getNome())
+                .append(" | Categoria: ")
+                .append(exercicio.getCategoria())
+                .append(" | Equipamento: ")
+                .append(exercicio.getEquipamento())
+                .append("\n");
+        }
+
+        String prompt = """
+            Você é um personal trainer profissional.
+
+            Monte uma ficha de treino inteligente.
+
+            Objetivo:
+            %s
+
+            Dias por semana:
+            %d
+
+            Utilize SOMENTE os exercícios abaixo:
+
+            %s
+
+            Retorne em formato organizado contendo:
+
+            - dia da semana
+            - grupo muscular
+            - exercício
+            - séries
+            - repetições
+            - intervalo
+            - instrução
+            """
+            .formatted(
+                objetivo,
+                diasPorSemana,
+                listaExercicios
+            );
+
+        Map<String, Object> request =
+            Map.of(
+                "model", ollamaModel,
+                "prompt", prompt,
+                "stream", false
+            );
+
+        ResponseEntity<Map> response =
+            restTemplate.postForEntity(
+                ollamaUrl,
+                request,
+                Map.class
+            );
+
+        if (
+            response.getBody() == null ||
+            response.getBody().get("response") == null
+        ) {
+
+            throw new RuntimeException(
+                "Resposta inválida do Ollama."
+            );
+        }
+
+        return response
+            .getBody()
+            .get("response")
+            .toString();
     }
 }
