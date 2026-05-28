@@ -51,9 +51,6 @@ public class TreinoController {
             aiService;
     }
 
-    // =====================================================
-    // LISTAR EXERCÍCIOS
-    // =====================================================
 
     @GetMapping("/exercicios")
     public List<Exercicio> listarExercicios() {
@@ -61,10 +58,7 @@ public class TreinoController {
         return exercicioRepository.findAll();
     }
 
-    // =====================================================
-    // BUSCAR TREINO DO USUÁRIO
-    // =====================================================
-
+ 
     @GetMapping("/treinos/me")
     public List<TreinoDashboardDto> buscarMeuTreino(
         @AuthenticationPrincipal Jwt jwt
@@ -107,9 +101,6 @@ public class TreinoController {
             .toList();
     }
 
-    // =====================================================
-    // CRIAR TREINO MANUAL
-    // =====================================================
 
     @PostMapping("/treinos")
     @ResponseStatus(HttpStatus.CREATED)
@@ -170,10 +161,7 @@ public class TreinoController {
             .save(treino);
     }
 
-    // =====================================================
-    // GERAR TREINO IA
-    // =====================================================
-
+ 
     @PostMapping("/treinos/gerar")
     @ResponseStatus(HttpStatus.CREATED)
     public List<TreinoUsuario> gerarFichaInteligente(
@@ -198,17 +186,11 @@ public class TreinoController {
                     jwt.getSubject()
                 );
 
-            // =============================================
-            // REMOVE TREINOS ANTIGOS
-            // =============================================
-
+       
             treinoUsuarioRepository
                 .deleteByUserId(userId);
 
-            // =============================================
-            // BUSCA CATÁLOGO DE EXERCÍCIOS
-            // =============================================
-
+     
             List<Exercicio> exercicios =
                 exercicioRepository.findAll();
 
@@ -220,10 +202,7 @@ public class TreinoController {
                 );
             }
 
-            // =============================================
-            // GERA TREINO IA
-            // =============================================
-
+          
             String respostaIa =
                 aiService.gerarFicha(
                     request.objetivo(),
@@ -242,10 +221,7 @@ public class TreinoController {
                 );
             }
 
-            // =============================================
-            // SANITIZA JSON
-            // =============================================
-
+        
             String jsonDaIa =
                 AiResponseSanitizer
                     .limparJson(respostaIa);
@@ -258,10 +234,7 @@ public class TreinoController {
                 jsonDaIa
             );
 
-            // =============================================
-            // CONVERTE JSON -> DTO
-            // =============================================
-
+       
             List<FichaTreinoIaDto> listaIa =
                 objectMapper.readValue(
                     jsonDaIa,
@@ -278,10 +251,7 @@ public class TreinoController {
                 );
             }
 
-            // =============================================
-            // CONVERTE DTO -> ENTITY
-            // =============================================
-
+         
             List<TreinoUsuario> novosTreinos =
                 listaIa.stream().map(dto -> {
 
@@ -363,10 +333,7 @@ public class TreinoController {
         }
     }
 
-    // =====================================================
-    // VALIDA JWT
-    // =====================================================
-
+ 
     private void validarJwt(Jwt jwt) {
 
         if (jwt == null) {
@@ -378,10 +345,7 @@ public class TreinoController {
         }
     }
 
-    // =====================================================
-    // DTO TREINO MANUAL
-    // =====================================================
-
+ 
     record TreinoRequest(
 
         @NotNull(
