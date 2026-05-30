@@ -21,97 +21,83 @@ public class AiService {
     private String ollamaModel;
 
     public AiService() {
-
-        SimpleClientHttpRequestFactory factory =
-            new SimpleClientHttpRequestFactory();
-
-        factory.setConnectTimeout(5000);
-
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(10000);
         factory.setReadTimeout(120000);
-
-        this.restTemplate =
-            new RestTemplate(factory);
+        this.restTemplate = new RestTemplate(factory);
     }
 
-    public String gerarFicha(
-        String objetivo,
-        Integer diasPorSemana,
-        List<Exercicio> exercicios
-    ) {
+    public String gerarFicha(String objetivo, Integer diasPorSemana, List<Exercicio> exercicios) {
 
-        StringBuilder listaExercicios =
-            new StringBuilder();
+        StringBuilder listaExercicios = new StringBuilder();
 
         for (Exercicio exercicio : exercicios) {
-
             listaExercicios
-                .append("- ")
+                .append("- externalId: ")
+                .append(exercicio.getExternalId())
+                .append(" | nome: ")
                 .append(exercicio.getNome())
-                .append(" | Categoria: ")
+                .append(" | categoria: ")
                 .append(exercicio.getCategoria())
-                .append(" | Equipamento: ")
-                .append(exercicio.getEquipamento())
                 .append("\n");
         }
 
         String prompt = """
-            Você é um personal trainer profissional.
+Você é um gerador de fichas de treino estruturadas.
 
-            Monte uma ficha de treino inteligente.
+REGRA CRÍTICA:
+Você SÓ pode usar exercícios da lista fornecida.
+Você NÃO pode inventar exercícios.
+Você DEVE usar apenas externalId.
 
-            Objetivo:
-            %s
+RETORNE SOMENTE JSON VÁLIDO.
+NÃO use markdown.
+NÃO explique.
+NÃO escreva texto fora do JSON.
 
-            Dias por semana:
-            %d
+FORMATO OBRIGATÓRIO:
+[
+  {
+    "diaSemana": "Segunda",
+    "grupoMuscular": "Peito",
+    "exercicioExternalId": "Barbell_Bench_Press",
+    "series": 3,
+    "repeticoes": 10,
+    "intervalo": "60s"
+  }
+]
 
-            Utilize SOMENTE os exercícios abaixo:
+IMPORTANTE:
+- use apenas externalId da lista
+- nunca invente exercício
+- respeite o objetivo e nível do usuário
 
-            %s
+Objetivo: %s
+Dias por semana: %d
 
-            Retorne em formato organizado contendo:
+EXERCÍCIOS DISPONÍVEIS:
+%s
+""".formatted(objetivo, diasPorSemana, listaExercicios.toString());
 
-            - dia da semana
-            - grupo muscular
-            - exercício
-            - séries
-            - repetições
-            - intervalo
-            - instrução
-            """
-            .formatted(
-                objetivo,
-                diasPorSemana,
-                listaExercicios
-            );
+        Map<String, Object> request = Map.of(
+            "model", ollamaModel,
+            "prompt", prompt,
+            "stream", false
+        );
 
-        Map<String, Object> request =
-            Map.of(
-                "model", ollamaModel,
-                "prompt", prompt,
-                "stream", false
-            );
+        try {
+            ResponseEntity<Map> response =
+                restTemplate.postForEntity(ollamaUrl, request, Map.class);
 
-        ResponseEntity<Map> response =
-            restTemplate.postForEntity(
-                ollamaUrl,
-                request,
-                Map.class
-            );
+            if (response.getBody() == null || !response.getBody().containsKey("response")) {
+                throw new RuntimeException("Resposta do Ollama veio vazia ou inválida.");
+            }
 
-        if (
-            response.getBody() == null ||
-            response.getBody().get("response") == null
-        ) {
+            return response.getBody().get("response").toString();
 
-            throw new RuntimeException(
-                "Resposta inválida do Ollama."
-            );
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Erro na comunicação com o Ollama: " + e.getMessage());
         }
-
-        return response
-            .getBody()
-            .get("response")
-            .toString();
     }
 }

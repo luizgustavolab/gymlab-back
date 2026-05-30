@@ -1,23 +1,19 @@
 package com.gymlab.api;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-
 import org.springframework.http.HttpStatus;
-
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
-
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,357 +23,208 @@ import java.util.UUID;
 public class TreinoController {
 
     private final ExercicioRepository exercicioRepository;
-
     private final TreinoUsuarioRepository treinoUsuarioRepository;
-
     private final AiService aiService;
-
-    private final ObjectMapper objectMapper =
-        new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public TreinoController(
-        ExercicioRepository exercicioRepository,
-        TreinoUsuarioRepository treinoUsuarioRepository,
-        AiService aiService
+            ExercicioRepository exercicioRepository,
+            TreinoUsuarioRepository treinoUsuarioRepository,
+            AiService aiService
     ) {
-
-        this.exercicioRepository =
-            exercicioRepository;
-
-        this.treinoUsuarioRepository =
-            treinoUsuarioRepository;
-
-        this.aiService =
-            aiService;
+        this.exercicioRepository = exercicioRepository;
+        this.treinoUsuarioRepository = treinoUsuarioRepository;
+        this.aiService = aiService;
     }
-
 
     @GetMapping("/exercicios")
     public List<Exercicio> listarExercicios() {
-
         return exercicioRepository.findAll();
     }
 
- 
     @GetMapping("/treinos/me")
     public List<TreinoDashboardDto> buscarMeuTreino(
-        @AuthenticationPrincipal Jwt jwt
+            @AuthenticationPrincipal Jwt jwt
     ) {
-
         validarJwt(jwt);
 
-        UUID userId =
-            UUID.fromString(jwt.getSubject());
+        UUID userId = UUID.fromString(jwt.getSubject());
 
         return treinoUsuarioRepository
-            .findByUserId(userId)
-            .stream()
-            .map(treino ->
-                new TreinoDashboardDto(
-
-                    treino.getDiaSemana(),
-
-                    treino.getGrupoMuscular(),
-
-                    treino
-                        .getExercicio()
-                        .getNome(),
-
-                    treino
-                        .getExercicio()
-                        .getEquipamento(),
-
-                    treino
-                        .getExercicio()
-                        .getInstrucao(),
-
-                    treino.getSeries(),
-
-                    treino.getRepeticoes(),
-
-                    treino.getIntervalo()
-                )
-            )
-            .toList();
+                .findByUserId(userId)
+                .stream()
+                .map(treino -> new TreinoDashboardDto(
+                        treino.getDiaSemana(),
+                        treino.getGrupoMuscular(),
+                        treino.getExercicio().getNome(),
+                        treino.getExercicio().getEquipamento(),
+                        treino.getExercicio().getInstrucoes() != null && !treino.getExercicio().getInstrucoes().isEmpty()
+                                ? treino.getExercicio().getInstrucoes().get(0)
+                                : "",
+                        treino.getSeries(),
+                        treino.getRepeticoes(),
+                        treino.getIntervalo()
+                ))
+                .toList();
     }
-
 
     @PostMapping("/treinos")
     @ResponseStatus(HttpStatus.CREATED)
     public TreinoUsuario criarTreino(
-        @Valid @RequestBody TreinoRequest request,
-        @AuthenticationPrincipal Jwt jwt
+            @Valid @RequestBody TreinoRequest request,
+            @AuthenticationPrincipal Jwt jwt
     ) {
-
         validarJwt(jwt);
 
-        UUID userId =
-            UUID.fromString(jwt.getSubject());
+        UUID userId = UUID.fromString(jwt.getSubject());
 
-        Exercicio exercicio =
-            exercicioRepository
+        Exercicio exercicio = exercicioRepository
                 .findById(request.exercicioId())
-                .orElseThrow(() ->
-                    new ResponseStatusException(
+                .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Exercício não encontrado"
-                    )
-                );
+                ));
 
-        TreinoUsuario treino =
-            new TreinoUsuario();
-
+        TreinoUsuario treino = new TreinoUsuario();
         treino.setId(UUID.randomUUID());
-
         treino.setUserId(userId);
-
         treino.setExercicio(exercicio);
+        treino.setDiaSemana(request.diaSemana());
+        treino.setGrupoMuscular(request.grupoMuscular());
+        treino.setSeries(request.series());
+        treino.setRepeticoes(request.repeticoes());
+        treino.setIntervalo(request.intervalo());
+        treino.setCriadoEm(LocalDate.now());
 
-        treino.setDiaSemana(
-            request.diaSemana()
-        );
-
-        treino.setGrupoMuscular(
-            request.grupoMuscular()
-        );
-
-        treino.setSeries(
-            request.series()
-        );
-
-        treino.setRepeticoes(
-            request.repeticoes()
-        );
-
-        treino.setIntervalo(
-            request.intervalo()
-        );
-
-        treino.setCriadoEm(
-            LocalDate.now()
-        );
-
-        return treinoUsuarioRepository
-            .save(treino);
+        return treinoUsuarioRepository.save(treino);
     }
 
- 
     @PostMapping("/treinos/gerar")
     @ResponseStatus(HttpStatus.CREATED)
     public List<TreinoUsuario> gerarFichaInteligente(
-        @Valid @RequestBody GeraTreinoRequest request,
-        @AuthenticationPrincipal Jwt jwt
+            @Valid @RequestBody GeraTreinoRequest request,
+            @AuthenticationPrincipal Jwt jwt
     ) {
-
         validarJwt(jwt);
 
         try {
+            UUID userId = UUID.fromString(jwt.getSubject());
 
-            System.out.println(
-                "JWT RECEBIDO:"
-            );
+            treinoUsuarioRepository.deleteByUserId(userId);
 
-            System.out.println(
-                jwt.getTokenValue()
-            );
+            String nivelAlvo = request.objetivo().toLowerCase().contains("iniciante")
+                    ? "Iniciante"
+                    : request.objetivo().toLowerCase().contains("avançado")
+                    ? "Avançado"
+                    : "Intermediário";
 
-            UUID userId =
-                UUID.fromString(
-                    jwt.getSubject()
-                );
+            String categoriaAlvo = "Musculação";
 
-       
-            treinoUsuarioRepository
-                .deleteByUserId(userId);
-
-     
-            List<Exercicio> exercicios =
-                exercicioRepository.findAll();
+            List<Exercicio> exercicios = exercicioRepository
+                    .findFilteredPool(nivelAlvo, categoriaAlvo, null, 45);
 
             if (exercicios.isEmpty()) {
+                exercicios = exercicioRepository.findFilteredPool(null, null, null, 45);
+            }
 
+            if (exercicios.isEmpty()) {
                 throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Nenhum exercício cadastrado."
+                        HttpStatus.BAD_REQUEST,
+                        "Nenhum exercício encontrado após filtragem."
                 );
             }
 
-          
-            String respostaIa =
-                aiService.gerarFicha(
+            String respostaIa = aiService.gerarFicha(
                     request.objetivo(),
                     request.diasPorSemana(),
                     exercicios
-                );
+            );
 
-            if (
-                respostaIa == null
-                || respostaIa.isBlank()
-            ) {
-
+            if (respostaIa == null || respostaIa.isBlank()) {
                 throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "IA retornou resposta vazia."
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "IA retornou resposta vazia."
                 );
             }
 
-        
-            String jsonDaIa =
-                AiResponseSanitizer
-                    .limparJson(respostaIa);
+            String jsonDaIa = AiResponseSanitizer.limparJson(respostaIa);
 
-            System.out.println(
-                "JSON LIMPO DA IA:"
-            );
+            JsonNode root = objectMapper.readTree(jsonDaIa);
 
-            System.out.println(
-                jsonDaIa
-            );
-
-       
-            List<FichaTreinoIaDto> listaIa =
-                objectMapper.readValue(
-                    jsonDaIa,
-                    new TypeReference<
-                        List<FichaTreinoIaDto>
-                    >() {}
-                );
-
-            if (listaIa.isEmpty()) {
-
+            if (!root.isArray()) {
                 throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "IA não retornou exercícios."
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "IA não retornou uma lista válida."
                 );
             }
 
-         
-            List<TreinoUsuario> novosTreinos =
-                listaIa.stream().map(dto -> {
+            List<TreinoUsuario> novosTreinos = new ArrayList<>();
 
-                    Exercicio exercicio =
-                        exercicioRepository
-                            .findByNomeIgnoreCase(
-                                dto.exercicioNome()
-                            )
-                            .orElseThrow(() ->
-                                new RuntimeException(
-                                    "Exercício inválido retornado pela IA: "
-                                        + dto.exercicioNome()
-                                )
-                            );
+            for (JsonNode node : root) {
 
-                    TreinoUsuario treino =
-                        new TreinoUsuario();
+                String exercicioExternalId = node.path("exercicioExternalId").asText(null);
 
-                    treino.setId(
-                        UUID.randomUUID()
-                    );
+                if (exercicioExternalId == null) {
+                    throw new RuntimeException("IA retornou exercício sem externalId");
+                }
 
-                    treino.setUserId(
-                        userId
-                    );
+                Exercicio exercicio = exercicioRepository
+                        .findByExternalId(exercicioExternalId)
+                        .orElseThrow(() -> new RuntimeException(
+                                "Exercício inválido retornado pela IA: " + exercicioExternalId
+                        ));
 
-                    treino.setExercicio(
-                        exercicio
-                    );
+                TreinoUsuario treino = new TreinoUsuario();
+                treino.setId(UUID.randomUUID());
+                treino.setUserId(userId);
+                treino.setExercicio(exercicio);
+                treino.setGrupoMuscular(node.path("grupoMuscular").asText("Geral"));
+                treino.setDiaSemana(node.path("diaSemana").asText("Segunda"));
+                treino.setSeries(node.path("series").asInt(3));
+                treino.setRepeticoes(node.path("repeticoes").asInt(10));
+                treino.setIntervalo(node.path("intervalo").asText("60s"));
+                treino.setCriadoEm(LocalDate.now());
 
-                    treino.setGrupoMuscular(
-                        dto.grupoMuscular()
-                    );
+                novosTreinos.add(treino);
+            }
 
-                    treino.setDiaSemana(
-                        dto.diaSemana()
-                    );
-
-                    treino.setSeries(
-                        dto.series()
-                    );
-
-                    treino.setRepeticoes(
-                        dto.repeticoes()
-                    );
-
-                    treino.setIntervalo(
-                        dto.intervalo()
-                    );
-
-                    treino.setCriadoEm(
-                        LocalDate.now()
-                    );
-
-                    return treino;
-
-                }).toList();
-
-            // =============================================
-            // SALVA TREINOS
-            // =============================================
-
-            return treinoUsuarioRepository
-                .saveAll(novosTreinos);
+            return treinoUsuarioRepository.saveAll(novosTreinos);
 
         } catch (ResponseStatusException e) {
-
             throw e;
-
         } catch (Exception e) {
-
-            e.printStackTrace();
-
             throw new ResponseStatusException(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "Erro ao gerar treino IA: "
-                    + e.getMessage()
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Erro ao gerar treino IA: " + e.getMessage()
             );
         }
     }
 
- 
     private void validarJwt(Jwt jwt) {
-
         if (jwt == null) {
-
             throw new ResponseStatusException(
-                HttpStatus.UNAUTHORIZED,
-                "JWT inválido ou ausente."
+                    HttpStatus.UNAUTHORIZED,
+                    "JWT inválido ou ausente."
             );
         }
     }
 
- 
     record TreinoRequest(
+            @NotNull(message = "O ID do exercício é obrigatório")
+            UUID exercicioId,
 
-        @NotNull(
-            message =
-                "O ID do exercício é obrigatório"
-        )
-        UUID exercicioId,
+            @NotBlank(message = "O dia da semana deve ser informado")
+            String diaSemana,
 
-        @NotBlank(
-            message =
-                "O dia da semana deve ser informado"
-        )
-        String diaSemana,
+            @NotBlank(message = "O grupo muscular é obrigatório")
+            String grupoMuscular,
 
-        @NotBlank(
-            message =
-                "O grupo muscular é obrigatório"
-        )
-        String grupoMuscular,
+            @Min(value = 1, message = "Séries > 0")
+            int series,
 
-        @Min(
-            value = 1,
-            message = "Séries > 0"
-        )
-        int series,
+            @Min(value = 1, message = "Repetições > 0")
+            int repeticoes,
 
-        @Min(
-            value = 1,
-            message = "Repetições > 0"
-        )
-        int repeticoes,
-
-        String intervalo
+            String intervalo
     ) {}
 }
