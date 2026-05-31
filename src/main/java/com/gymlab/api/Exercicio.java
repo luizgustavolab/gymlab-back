@@ -1,6 +1,11 @@
 package com.gymlab.api;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -77,7 +82,8 @@ public class Exercicio {
     @Column(name = "created_at", columnDefinition = "timestamptz")
     private OffsetDateTime createdAt;
 
-    public Exercicio() {}
+    public Exercicio() {
+    }
 
     public UUID getId() {
         return id;
@@ -223,6 +229,7 @@ public class Exercicio {
         this.musculosSecundarios = musculosSecundarios;
     }
 
+    
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
