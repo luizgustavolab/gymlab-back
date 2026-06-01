@@ -46,7 +46,7 @@ public class LgpdController {
 
     private String mascararIp(String ip) {
         if (ip == null || ip.equals("unknown")) return "***";
-        // Lidar com IP via Proxy (X-Forwarded-For pode vir com vários IPs)
+       
         String ipReal = ip.contains(",") ? ip.split(",")[0].trim() : ip;
         
         if (ipReal.contains(".")) {

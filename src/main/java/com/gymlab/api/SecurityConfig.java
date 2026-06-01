@@ -32,12 +32,13 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Adicionado suporte explícito
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/lgpd/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/exercicios").permitAll()
-                .anyRequest().authenticated()
-            )
+    .requestMatchers("/").permitAll() // Adicione esta linha
+    .requestMatchers("/api/lgpd/**").permitAll()
+    .requestMatchers(HttpMethod.GET, "/api/exercicios").permitAll()
+    .anyRequest().authenticated()
+)
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt
                     .decoder(jwtDecoder())
