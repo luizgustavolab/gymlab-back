@@ -1,8 +1,6 @@
 package com.gymlab.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.gymlab.api.Genero;
-import com.gymlab.api.ObjetivoTreino;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -12,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -54,9 +53,8 @@ public class TreinoController {
 
         UUID userId = UUID.fromString(jwt.getSubject());
 
-        List<TreinoUsuario> treinos = treinoUsuarioRepository.findByUserId(userId);
-
-        return treinos.stream()
+        return treinoUsuarioRepository.findByUserId(userId)
+                .stream()
                 .map(this::toDashboardDto)
                 .toList();
     }
@@ -94,6 +92,7 @@ public class TreinoController {
 
     @PostMapping("/treinos/gerar")
     @ResponseStatus(HttpStatus.CREATED)
+    @Transactional // 🔥 AQUI ESTÁ A CORREÇÃO ESSENCIAL
     public List<TreinoDashboardDto> gerarFicha(
             @Valid @RequestBody GeraTreinoRequest request,
             @AuthenticationPrincipal Jwt jwt
@@ -102,10 +101,10 @@ public class TreinoController {
 
         UUID userId = UUID.fromString(jwt.getSubject());
 
+        // 🔥 agora o delete funciona dentro de transação
         treinoUsuarioRepository.deleteByUserId(userId);
 
-       List<Exercicio> exercicios =
-        exercicioRepository.findAll();
+        List<Exercicio> exercicios = exercicioRepository.findAll();
 
         if (exercicios.isEmpty()) {
             throw new ResponseStatusException(
@@ -126,11 +125,9 @@ public class TreinoController {
 
         treinoUsuarioRepository.saveAll(treinosGerados);
 
-        List<TreinoDashboardDto> resposta = treinosGerados.stream()
+        return treinosGerados.stream()
                 .map(this::toDashboardDto)
                 .toList();
-
-        return resposta;
     }
 
     private void validarJwt(Jwt jwt) {

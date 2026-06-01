@@ -53,21 +53,43 @@ public class HipertrofiaStrategy implements WorkoutStrategy {
 
                 String grupo = grupoConfig.grupo();
 
-                List<Exercicio> candidatos = ctx.getExercicios()
-                        .stream()
-                        .filter(ex -> grupo.equals(MuscleGroupMapper.mapPrimaryMuscle(ex.getMusculosPrimarios())))
-                        .filter(ex -> CategoriaTreinoRules.categoriaValida(ctx.getObjetivo(), ex.getCategoria()))
-                        .filter(ex -> {
-                            String norm = ExerciseNameNormalizer.normalize(ex.getNome());
-                            if (nomesUsados.contains(norm)) {
-                                return false;
-                            }
-                            nomesUsados.add(norm);
-                            return true;
-                        })
-                        .sorted(Comparator.comparingDouble(e -> Math.random()))
-                        .limit(grupoConfig.quantidadeExercicios())
-                        .collect(Collectors.toList());
+List<Exercicio> candidatos = ctx.getExercicios()
+        .stream()
+        .filter(ex -> grupo.equals(MuscleGroupMapper.mapPrimaryMuscle(ex.getMusculosPrimarios())))
+        .filter(ex -> CategoriaTreinoRules.categoriaValida(ctx.getObjetivo(), ex.getCategoria()))
+        .filter(ex -> {
+            String norm = ExerciseNameNormalizer.normalize(ex.getNome());
+            if (nomesUsados.contains(norm)) {
+                return false;
+            }
+            nomesUsados.add(norm);
+            return true;
+        })
+        .collect(Collectors.collectingAndThen(
+                Collectors.toList(),
+                list -> {
+                    Collections.shuffle(list); 
+                    return list.stream();
+                }
+        ))
+        .limit(grupoConfig.quantidadeExercicios())
+        .toList();
+
+List<Exercicio> filtrados = new ArrayList<>();
+Set<String> nomesUsadosLocal = new HashSet<>();
+
+for (Exercicio ex : candidatos) {
+    String norm = ExerciseNameNormalizer.normalize(ex.getNome());
+    if (nomesUsadosLocal.add(norm)) {
+        filtrados.add(ex);
+    }
+}
+
+Collections.shuffle(filtrados);
+
+List<Exercicio> selecionados = filtrados.stream()
+        .limit(grupoConfig.quantidadeExercicios())
+        .toList();
 
                 for (Exercicio ex : candidatos) {
 

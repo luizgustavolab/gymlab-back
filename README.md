@@ -1,108 +1,286 @@
-# API GymLab 🏋️‍♂️🤖
+# 🏋️‍♂️🖥️ GymLab API — Backend Engine
 
-GymLab é uma API projetada para orquestrar o gerenciamento de exercícios físicos e a geração inteligente de fichas de treino personalizadas. A plataforma permite o cadastro de perfil biométrico e utiliza inteligência artificial para montar rotinas baseadas em hipertrofia, força, definição ou emagrecimento.
+GymLab API é o núcleo inteligente do ecossistema GymLab, responsável por toda a lógica de negócio relacionada à geração de treinos personalizados, validação de regras de exercícios e persistência de dados dos usuários.
 
-## 🧠 Filosofia e Decisões de Arquitetura (O Laboratório)
+A API foi construída com Spring Boot + JPA + PostgreSQL (Supabase) e implementa um motor de geração de treino baseado em Strategy Pattern + Template System, permitindo a criação dinâmica de fichas de treino baseadas em objetivos como hipertrofia, força e emagrecimento.
 
-Embora o projeto tenha nascido como um laboratório prático de estudos, ele é fundamentado em lógica de engenharia de software real e escalável. 
+---
 
-A principal decisão arquitetural foi **não utilizar o PostgREST nativo do Supabase** (que expõe o banco diretamente para o front-end), optando pela construção de um middleware em **Java com Spring Boot**. Os motivos incluem:
+# 🧠 Arquitetura Geral
 
-1. **Segurança e Regras de Negócio Ocultas:** A API Java atua como um escudo. O *Row Level Security* (RLS) do Supabase blinda o banco de acessos diretos via internet, enquanto o Spring Security (via OAuth2 Resource Server) intercepta os JWTs, valida chaves assimétricas (JWKS) e garante que apenas usuários autenticados gravem dados, sem expor a lógica de orquestração no client-side.
-2. **Orquestração de Inteligência Artificial:** Fichas de treino não são um simples CRUD. A geração inteligente exige cálculo de IMC, análise de objetivos (cargas, repetições, intervalos) e integração com agentes LLM. Um backend dedicado é o único local seguro e performático para lidar com essa camada sem sobrecarregar o front-end ou expor chaves de API da IA.
-3. **Contratos Estritos (DTOs e Validações):** A utilização do Jakarta Bean Validation garante a integridade estrutural e semântica antes mesmo de tocar no banco de dados.
+O backend segue uma arquitetura em camadas baseada em responsabilidades bem definidas:
 
-## 🔧 Tecnologias Utilizadas
+Frontend (Angular)
+        ↓
+Controller Layer (REST API)
+        ↓
+Service / Engine Layer (WorkoutEngine)
+        ↓
+Strategy Layer (Objetivos de Treino)
+        ↓
+Template Layer (Estrutura Semanal)
+        ↓
+Rules Engine (Categorias de Exercício)
+        ↓
+Repository Layer (JPA)
+        ↓
+PostgreSQL (Supabase)
 
-| Tecnologia | Uso |
+---
+
+
+# ⚙️ Tecnologias Utilizadas
+
+Tecnologia | Função
 | :--- | :--- |
-| **Java 21** | Linguagem principal de desenvolvimento |
-| **Spring Boot 3** | Framework base da aplicação |
-| **Spring Security (OAuth2)** | Interceptação e validação de JWTs via JWKS |
-| **PostgreSQL / Supabase** | Banco de dados relacional e provedor de Autenticação |
-| **Jakarta Validation** | Validação sintática de payloads (DTOs) |
-| **Maven** | Gerenciamento de dependências e build |
+| Java 21 | Linguagem principal do backend |
+| Spring Boot 3+ | Framework base da API REST |
+| Spring Web | Controle de endpoints HTTP |
+| Spring Security (JWT) | Autenticação via Supabase |
+| Spring Data JPA | Persistência e ORM |
+| Hibernate | Mapeamento objeto-relacional |
+| PostgreSQL (Supabase) | Banco de dados relacional |
+| Jackson | Serialização JSON |
+| Maven | Gerenciamento de dependências |
 
-## 🚀 Como Executar o Projeto Localmente
+---
 
-1. Clone o repositório:
-   ```bash
-   git clone [https://github.com/luizgustavolab/gymlab-back.git](https://github.com/luizgustavolab/gymlab-back.git)
+# 🔐 Autenticação e Segurança
 
-2. Configure as variáveis de ambiente no arquivo src/main/resources/application.properties:
-    spring.datasource.url=jdbc:postgresql://[SEU_HOST_SUPABASE]:5432/postgres
-    spring.datasource.username=postgres
-    spring.datasource.password=[SUA_SENHA_DO_BANCO]
-    spring.security.oauth2.resourceserver.jwt.jwk-set-uri=https://[ID_DO_PROJETO].supabase.co/rest/v1/auth/keys
+O sistema utiliza Supabase Auth (JWT stateless).
 
-3. Na raiz do projeto, execute o comando Maven para baixar as dependências e iniciar o servidor:
-    .\mvnw.cmd spring-boot:run
+- Fluxo de autenticação:
+1. Frontend autentica via Supabase
+2. JWT é gerado pelo provider
+3. Token é enviado via header:
+      Authorization: Bearer <jwt>
+4. Backend valida o token automaticamente via Spring Security
+5. O userId é extraído do sub do JWT:
+    UUID userId = UUID.fromString(jwt.getSubject());
 
-A API estará disponível em http://localhost:8080.
+# 🧩 Módulo de Geração de Treino
 
-## 💪📗 Documentação da API
-Endpoints
-S01 - Listagem de Exercícios Catálogo
-GET /api/exercicios
-Rota pública. Retorna o catálogo estático de exercícios disponíveis na base.
+> Endpoint principal
+       /api/treinos/gerar
+- Responsabilidade
+    Gera uma ficha completa de treino baseada em:
+      Objetivo do usuário
+      Gênero
+      Dias de treino por semana
+      Base de exercícios cadastrados
 
-Response JSON Exemplo (200 OK):
-[
-  {
-    "id": "e3beb492-51c4-4f9d-afd7-aed8ee1461c4",
-    "nome": "Supino Reto",
-    "grupoMuscular": "Peito",
-    "maquina": false
-  }
-]
+> Fluxo interno
+- Validação do JWT
+- Remoção de treinos antigos do usuário
+- Consulta de exercícios no banco
+- Construção do WorkoutContext
+- Execução do motor de estratégia
+- Persistência dos treinos gerados
+- Retorno de DTO para o frontend
 
-S02 - Inserção de Exercício Isolado na FichaPOST /api/treinosRota Privada. Requer Token JWT no header Authorization: Bearer <token>.
+---
 
-Parâmetro               Tipo                Descrição
-exercicioId             UUID                Obrigatório.ID do exercício do catálogo.
-diaSemana               String              Obrigatório. Ex: "Segunda-feira".
-grupoMuscular           String              Obrigatório.
-series                  Int                 Obrigatório. Mínimo 1.
-repeticoes              Int                 Obrigatório. Mínimo 1.
-intervalo               String              Opcional. Tempo de descanso.
+# 🧠 Motor de Estratégias (Strategy Pattern)
 
-Request JSON Exemplo:
-{
-  "exercicioId": "e3beb492-51c4-4f9d-afd7-aed8ee1461c4",
-  "diaSemana": "Segunda-feira",
-  "grupoMuscular": "Peito",
-  "series": 4,
-  "repeticoes": 12,
-  "intervalo": "60s"
-}
+O sistema utiliza Strategy Pattern para separar regras de geração por objetivo.
 
-Response Status         Descrição
-201                     Criado com sucesso.
-400                     Dados estruturais inválidos (campos vazios ou negativos).
-401                     Token ausente, inválido ou expirado.
-404                     ID do exercício não encontrado no catálogo.
+- Estrutura:
+    HipertrofiaStrategy
+    ForcaStrategy
+    EmagrecimentoStrategy
+    CondicionamentoStrategy (ou derivado)
 
-S03 - Geração de Ficha via IA (Orquestrador)
+- Regra de seleção
+    boolean supports(String objetivo)
+Cada estratégia responde se é compatível com o objetivo solicitado.
+
+- Prioridade
+Cada strategy possui prioridade:
+    int priority()
+Isso permite ordenação de execução quando necessário.
+
+- Problema crítico resolvido
+Bug encontrado:
+.sorted(Comparator.comparingDouble(e -> Math.random()))
+Problema:
+viola contrato do Comparator
+causava crash no TimSort
+✔ Solução:
+Collections.shuffle(lista)
+
+---
+
+# 🧱 Template System
+- Responsabilidade
+  Define a estrutura semanal do treino:
+    divisão de dias
+    grupos musculares
+    quantidade de exercícios
+    séries e repetições
+
+- TemplateResolver
+Responsável por delegar o template correto:
+    TreinoTemplate resolve(ObjetivoTreino objetivo, Genero genero, int dias)
+
+- Problema identificado
+  Apenas HipertrofiaTemplateProvider existia inicialmente
+  Mas sistema suporta múltiplos objetivos
+Solução arquitetural:
+Refatoração para múltiplos providers:
+HipertrofiaTemplateProvider
+ForcaTemplateProvider
+EmagrecimentoTemplateProvider
+E resolução via switch por objetivo.
+
+---
+
+# 🧩 Regras de Categoria de Exercício
+- CategoriaTreinoRules
+Responsável por validar se um exercício pode ser usado em um objetivo específico.
+- Objetivos suportados:
+HIPERTROFIA → Musculação, Powerlifting
+FORÇA → Powerlifting, Strongman etc
+EMAGRECIMENTO → Condicionamento, Calistenia
+DEFINIÇÃO → híbrido leve
+- Validação
+    categoriaValida(ObjetivoTreino objetivo, String categoria)
+- Problema identificado
+comparação sensível a formato de string
+risco de inconsistência de dados
+- Mitigação
+normalização de strings
+uso de Set por objetivo
+
+---
+
+# 🏋️ Sistema de Prioridade de Exercícios
+- ExercisePriorityCatalog
+Define exercícios prioritários por grupo muscular:
+Exemplo:
+Peito:
+bench press
+incline bench press
+dumbbell press
+Costas:
+pull up
+lat pulldown
+barbell row
+Quadríceps:
+squat
+leg press
+lunge
+- Objetivo
+Garantir que exercícios compostos e mais eficientes tenham prioridade no algoritmo.
+
+---
+
+# 🗄️ Persistência (Supabase / PostgreSQL)
+- Entidade principal
+TreinoUsuario
+  Armazena:
+    userId
+    exercício
+  grupo muscular
+  séries / repetições
+  objetivo
+  data de criação
+  metadata do exercício
+  Operações principais
+  deleteByUserId (reset de ficha)
+  saveAll (persistência em lote)
+  findByUserId (consulta de dashboard)
+🚨 Problemas críticos já resolvidos
+1. Crash de Comparator (500 error)
+✔ Corrigido com shuffle seguro
+2. Explosão de inserts
+✔ Normalizado (~35 registros)
+3. Inconsistência de template
+✔ Identificado e estruturado para múltiplos providers
+
+---
+
+# 🔄 Fluxo final do sistema
+
+Angular Frontend
+      ↓
 POST /api/treinos/gerar
-Rota Privada. Requer Token JWT. Aciona o Agente Inteligente para orquestrar a ficha de treinos completa baseada na fisiologia do usuário.
+      ↓
+TreinoController
+      ↓
+JWT Validation (Supabase)
+      ↓
+WorkoutContext
+      ↓
+WorkoutEngine
+      ↓
+Strategy (por objetivo)
+      ↓
+TemplateResolver
+      ↓
+Rules Engine (categorias)
+      ↓
+JPA Repository
+      ↓
+PostgreSQL (Supabase)
 
-Parâmetro	        Tipo	    Descrição
-genero	            String	    Obrigatório. Masculino ou Feminino.
-peso	            Double	    Obrigatório. Usado para cálculo de IMC. Mínimo 30kg.
-altura	            Double	    Obrigatório. Usado para cálculo de IMC.
-objetivo	        String	    Obrigatório. (Hipertrofia, Força, Definição, Emagrecimento).
-diasPorSemana	    Int	        Obrigatório. Frequência de idas à academia (1 a 7).
-feedbackAjuste	    String	    Opcional. Instruções extras para o agente de IA.
+---
 
-Request JSON Exemplo:
-{
-  "genero": "Masculino",
-  "peso": 85.5,
-  "altura": 1.80,
-  "objetivo": "hipertrofia",
-  "diasPorSemana": 5,
-  "feedbackAjuste": "Focar desenvolvimento de pernas"
-}
+# 📦 Estrutura de Pacotes
+com.gymlab.api
+ ├── controller (TreinoController)
+ ├── engine (TreinoEngine)
+ ├── strategy (Hipertrofia, Forca, etc)
+ ├── template (TemplateResolver + Providers)
+ ├── rules (CategoriaTreinoRules)
+ ├── model (TreinoUsuario, Exercicio)
+ ├── dto (TreinoDashboardDto)
+ ├── repository (JPA Repositories)
+ └── security (JWT integration)
 
-(Nota: Response body pendente de implementação do agente de IA).
+ ---
 
+# 🚀 Como Executar o Backend Localmente
+
+> Clone o repositório
+git clone https://github.com/luizgustavolab/gymlab-back.git
+cd gymlab-back
+
+> Configurar variáveis de ambiente
+Criar:
+    src/main/resources/application.properties
+Exemplo:
+    spring.datasource.url=jdbc:postgresql://<supabase-url>
+    spring.datasource.username=postgres
+    spring.datasource.password=<senha>
+    spring.jpa.hibernate.ddl-auto=update
+    spring.jpa.show-sql=true
+    server.port=8080
+
+> Rodar a aplicação
+    ./mvnw spring-boot:run
+
+> Endpoint principal
+http://localhost:8080/api/treinos/gerar
+http://localhost:8080/api/exercicios
+
+---
+
+# 📌 Status do projeto
+- ✔ Concluído
+API REST funcional
+Motor de geração de treino
+Strategy Pattern implementado
+Integração com Supabase Auth
+Persistência no PostgreSQL
+Regras de categoria
+DTO de dashboard
+- ⚠ Em evolução
+Template system multi-objetivo completo
+Refinamento do engine de seleção de exercícios
+Melhorias de performance e deduplicação avançada
+
+---
+
+# 📄 Licença
+
+Projeto privado para fins de estudo, engenharia de software aplicada, e experimentação de sistemas inteligentes de prescrição de treino.
