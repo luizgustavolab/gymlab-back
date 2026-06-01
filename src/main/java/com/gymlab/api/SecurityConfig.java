@@ -2,6 +2,8 @@ package com.gymlab.api;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
+import java.util.List;
+
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
@@ -18,6 +20,9 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -27,19 +32,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .cors(cors -> {})
-            .addFilterBefore(
-                (request, response, chain) -> {
-                    HttpServletRequest req = (HttpServletRequest) request;
-                    String auth = req.getHeader("Authorization");
-                    System.out.println("=====================================");
-                    System.out.println("AUTH HEADER:");
-                    System.out.println(auth);
-                    System.out.println("=====================================");
-                    chain.doFilter(request, response);
-                },
-                UsernamePasswordAuthenticationFilter.class
-            )
+            .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Adicionado suporte explícito
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/lgpd/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/exercicios").permitAll()
@@ -56,11 +49,27 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(List.of(
+            "http://localhost:4200", 
+            "https://gymlab-front.vercel.app"
+        ));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        configuration.setAllowCredentials(true);
+        
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
     public JwtDecoder jwtDecoder() {
         try {
-            String jwkSetJson = System.getProperty("SUPABASE_PUBLIC_KEY");
+            String jwkSetJson = System.getenv("SUPABASE_PUBLIC_KEY");
             if (jwkSetJson == null || jwkSetJson.isEmpty()) {
-                jwkSetJson = System.getenv("SUPABASE_PUBLIC_KEY");
+                jwkSetJson = System.getProperty("SUPABASE_PUBLIC_KEY");
             }
 
             JWKSet jwkSet = JWKSet.parse(jwkSetJson);
@@ -74,7 +83,7 @@ public class SecurityConfig {
 
             return new NimbusJwtDecoder(jwtProcessor);
         } catch (Exception e) {
-            throw new IllegalStateException(e);
+            throw new IllegalStateException("Falha ao inicializar o JwtDecoder: " + e.getMessage());
         }
     }
 
