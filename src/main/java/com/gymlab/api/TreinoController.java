@@ -27,22 +27,25 @@ public class TreinoController {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private final ExercicioRepository exercicioRepository;
+    private final ExercicioService exercicioService;
     private final TreinoUsuarioRepository treinoUsuarioRepository;
     private final TreinoEngine treinoEngine;
 
     public TreinoController(
             ExercicioRepository exercicioRepository,
+            ExercicioService exercicioService,
             TreinoUsuarioRepository treinoUsuarioRepository,
             TreinoEngine treinoEngine
     ) {
         this.exercicioRepository = exercicioRepository;
+        this.exercicioService = exercicioService;
         this.treinoUsuarioRepository = treinoUsuarioRepository;
         this.treinoEngine = treinoEngine;
     }
 
     @GetMapping("/exercicios")
     public List<Exercicio> listarExercicios() {
-        return exercicioRepository.findAll();
+        return exercicioService.listarTodos();
     }
 
     @GetMapping("/treinos/me")
@@ -104,7 +107,7 @@ public class TreinoController {
         // 🔥 agora o delete funciona dentro de transação
         treinoUsuarioRepository.deleteByUserId(userId);
 
-        List<Exercicio> exercicios = exercicioRepository.findAll();
+        List<Exercicio> exercicios = exercicioService.listarTodos();
 
         if (exercicios.isEmpty()) {
             throw new ResponseStatusException(
